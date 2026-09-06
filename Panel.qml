@@ -25,7 +25,7 @@ import qs.Ui
 Panel {
   id: root
 
-  moduleName: "matrix.control"
+  moduleName: "io.github.tymurbogach.enter-the-matrix.widget" // Bar.qml overwrites this with the real entry id at load
   // No IpcHandler: the shell routes `summon` to a live bar widget through the
   // bar itself (shell.qml:isBarWidgetPanelPlugin), and registering a target
   // here would only compete with the rain service's own.
