@@ -45,20 +45,38 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // --- what the CLI last told us ---------------------------------------------
+  // Sanitized before anything reads it: the answer is parsed, not trusted.
+  // An object with schema 1, booleans that are exactly true, strings printable
+  // ASCII capped at 64 -- anything else falls back to switched-off defaults,
+  // which is also what a CLI that is not there says.
 
-  property var state: ({})
+  property var state: ({ name: "Matrix", slug: "", theme: "", active: false, pieces: ({}) })
   property bool asked: false
+
+  function cleanString(value) {
+    return String(value || "").replace(/[^\x20-\x7e]/g, "").slice(0, 64)
+  }
+
+  function sanitize(raw) {
+    var clean = { name: "Matrix", slug: "", theme: "", active: false, pieces: ({}) }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return clean
+    if (raw.schema !== 1) return clean
+    clean.name = cleanString(raw.name) || "Matrix"
+    clean.slug = cleanString(raw.slug)
+    clean.theme = cleanString(raw.theme)
+    clean.active = raw.active === true
+    var pieces = (raw.pieces && typeof raw.pieces === "object") ? raw.pieces : ({})
+    var keys = ["wallpaper", "screensaver", "lock", "boot", "widget"]
+    for (var i = 0; i < keys.length; i++) clean.pieces[keys[i]] = pieces[keys[i]] === true
+    return clean
+  }
 
   readonly property string packName: state.name || "Matrix"
   readonly property string currentTheme: String(state.theme || "")
   readonly property bool inEffect: state.active === true
 
   function on(key) {
-    return !!(state.pieces && state.pieces[key])
-  }
-
-  function wanted(key) {
-    return !!(state.settings && state.settings[key])
+    return !!(state.pieces && state.pieces[key] === true)
   }
 
   readonly property var rows: [
@@ -186,12 +204,12 @@ Panel {
     onExited: function(exitCode) {
       if (exitCode === 0 && root.statusRaw !== "") {
         try {
-          root.state = JSON.parse(root.statusRaw)
+          root.state = root.sanitize(JSON.parse(root.statusRaw))
         } catch (e) {
-          root.state = ({})
+          root.state = root.sanitize(null)
         }
       } else {
-        root.state = ({})
+        root.state = root.sanitize(null)
       }
       root.statusRaw = ""
       root.asked = true
@@ -293,6 +311,8 @@ Panel {
         Text {
           visible: root.asked && !root.inEffect
           width: parent.width
+          // Plain text: the slug inside is CLI output, not markup.
+          textFormat: Text.PlainText
           text: "Picking another theme stands the pack down. Your settings are kept — "
             + "come back with: omarchy theme set " + (root.state.slug || "")
           color: root.dim
