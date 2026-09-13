@@ -20,12 +20,14 @@ The normal way is automatic: installing the
 own `install.sh` fetches this repo and stages it for you. You do not need to
 add it separately.
 
-To add just this widget on its own (for development, or if you already have
-the rest of the pack installed some other way):
+To add just this widget on its own, for development only:
 
 ```bash
 omarchy plugin add https://github.com/tymurbogach/omarchy-matrix-widget --enable
 ```
+
+The pack pins the widget to one commit. The pack's `install.sh` leaves a
+checkout added by hand alone, so that checkout does not follow the pin.
 
 ## Remove
 
@@ -39,8 +41,9 @@ boot splash it took over.
 
 ## Requirements
 
-Part of the Matrix pack: it needs the pack's `omarchy-matrix` CLI on PATH
-(Omarchy 4.0.3), which the pack's own `install.sh` puts there.
+Part of the Matrix pack, on Omarchy 4.0.3. The widget runs the pack's CLI by
+absolute path, `~/.local/bin/omarchy-matrix`, and never looks it up on PATH.
+The pack's `install.sh` creates that file. Without it, every action is off.
 
 ## License
 
