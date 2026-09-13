@@ -38,6 +38,11 @@ Panel {
   readonly property string cli: Quickshell.env("HOME") + "/.local/bin/omarchy-matrix"
   // Omarchy's own floating terminal, by absolute path for the same reason.
   readonly property string launcher: Quickshell.env("OMARCHY_PATH") + "/bin/omarchy-launch-floating-terminal-with-presentation"
+  // Both paths come from the environment. An absolute path made of these
+  // characters only cannot close a single quote, so it is safe inside the
+  // shell command the launcher runs. Any other path disables the actions.
+  readonly property bool cliSafe: /^\/[A-Za-z0-9._\/-]+$/.test(cli)
+  readonly property bool launcherSafe: /^\/[A-Za-z0-9._\/-]+$/.test(launcher)
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color accent: Color.accent
@@ -124,21 +129,25 @@ Panel {
   // without re-tokenizing, so nothing here can become a second command.
 
   function runHidden(args) {
+    if (!root.cliSafe) return
     Quickshell.execDetached([root.cli].concat(args))
   }
 
   // In a terminal, not detached: these want a password, print as they go, or
-  // ask a question. The menu rows they replace did the same. One shell string,
-  // single-quoted, as the launcher's only argument -- and these three commands
-  // are the only ones that ever take that path.
-  function runVisibly(command) {
-    Quickshell.execDetached([root.launcher, "'" + command + "'"])
+  // ask a question. The launcher runs its one argument with `bash -c`, so that
+  // argument is a shell command. Only the CLI path goes in single quotes
+  // (cliSafe proves it cannot close them). The words after it are constants
+  // from this file. Quoting the whole command made bash look for a program
+  // named "omarchy-matrix doctor", and Repair, Uninstall and boot did nothing.
+  function runVisibly(args) {
+    if (!root.cliSafe || !root.launcherSafe) return
+    Quickshell.execDetached([root.launcher, "'" + root.cli + "' " + args.join(" ")])
   }
 
   function togglePiece(key) {
     if (key === "boot") {
       // sudo, and it rebuilds the initramfs.
-      runVisibly(cli + " boot toggle")
+      runVisibly(["boot", "toggle"])
       root.close()
       return
     }
@@ -150,12 +159,12 @@ Panel {
   }
 
   function repair() {
-    runVisibly(cli + " doctor")
+    runVisibly(["doctor"])
     root.close()
   }
 
   function uninstall() {
-    runVisibly(cli + " uninstall")
+    runVisibly(["uninstall"])
     root.close()
   }
 
