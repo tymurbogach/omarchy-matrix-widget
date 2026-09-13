@@ -171,6 +171,7 @@ Panel {
   function refresh() {
     if (!status.running) {
       root.statusRaw = ""
+      root.statusOverflow = false
       status.running = true
     }
   }
@@ -190,6 +191,9 @@ Panel {
   // The status answer, collected raw and parsed once the process is gone: a
   // clipped stream must never be parsed as if it were whole.
   property string statusRaw: ""
+  // Set once the answer passes the cap. Chunks that were already in flight
+  // when the process was stopped must not refill the buffer.
+  property bool statusOverflow: false
 
   Process {
     id: status
@@ -199,10 +203,12 @@ Panel {
     stdout: SplitParser {
       splitMarker: ""
       onRead: function(data) {
+        if (root.statusOverflow) return
         root.statusRaw += data
         // 16 KiB is far past any answer this CLI gives; past it the stream is
         // garbage, so the process stops instead of parsing a fragment.
         if (root.statusRaw.length > 16384) {
+          root.statusOverflow = true
           root.statusRaw = ""
           status.running = false
         }
@@ -211,7 +217,7 @@ Panel {
     // Not installed, or half installed: say nothing and dim the icon rather
     // than drawing four switches that would answer nothing.
     onExited: function(exitCode) {
-      if (exitCode === 0 && root.statusRaw !== "") {
+      if (exitCode === 0 && !root.statusOverflow && root.statusRaw !== "") {
         try {
           root.state = root.sanitize(JSON.parse(root.statusRaw))
         } catch (e) {
