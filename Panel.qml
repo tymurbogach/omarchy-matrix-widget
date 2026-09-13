@@ -55,7 +55,7 @@ Panel {
   // ASCII capped at 64 -- anything else falls back to switched-off defaults,
   // which is also what a CLI that is not there says.
 
-  property var state: ({ name: "Matrix", slug: "", theme: "", active: false, pieces: ({}) })
+  property var state: ({ name: "Matrix", slug: "", theme: "", active: false, settings: ({}), pieces: ({}) })
   property bool asked: false
 
   function cleanString(value) {
@@ -63,16 +63,20 @@ Panel {
   }
 
   function sanitize(raw) {
-    var clean = { name: "Matrix", slug: "", theme: "", active: false, pieces: ({}) }
+    var clean = { name: "Matrix", slug: "", theme: "", active: false, settings: ({}), pieces: ({}) }
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return clean
     if (raw.schema !== 1) return clean
     clean.name = cleanString(raw.name) || "Matrix"
     clean.slug = cleanString(raw.slug)
     clean.theme = cleanString(raw.theme)
     clean.active = raw.active === true
+    var settings = (raw.settings && typeof raw.settings === "object") ? raw.settings : ({})
     var pieces = (raw.pieces && typeof raw.pieces === "object") ? raw.pieces : ({})
     var keys = ["wallpaper", "screensaver", "lock", "boot", "widget"]
-    for (var i = 0; i < keys.length; i++) clean.pieces[keys[i]] = pieces[keys[i]] === true
+    for (var i = 0; i < keys.length; i++) {
+      clean.settings[keys[i]] = settings[keys[i]] === true
+      clean.pieces[keys[i]] = pieces[keys[i]] === true
+    }
     return clean
   }
 
@@ -80,8 +84,25 @@ Panel {
   readonly property string currentTheme: String(state.theme || "")
   readonly property bool inEffect: state.active === true
 
+  // Happening now. This decides the switch.
   function on(key) {
     return !!(state.pieces && state.pieces[key] === true)
+  }
+
+  // Switched on in the settings, whether or not it is happening now.
+  function wanted(key) {
+    return !!(state.settings && state.settings[key] === true)
+  }
+
+  // The line under a row's label. A piece that is on in the settings but not
+  // in effect gets the reason, in the words that `status` uses. Without it,
+  // that piece reads exactly like a piece that is off.
+  function note(row) {
+    if (on(row.key) || !wanted(row.key)) return row.description
+    // Repair leaves the boot splash alone: it needs sudo.
+    if (row.key === "boot") return "On, but not applied. Run: omarchy-matrix boot on"
+    if (!inEffect) return "On, but stood down with the theme"
+    return "On, but not in effect. Repair brings it back."
   }
 
   readonly property var rows: [
@@ -346,13 +367,13 @@ Panel {
 
             width: column.width
             label: modelData.label
-            description: modelData.description
+            // The switch follows what is happening, not what is configured.
+            // A piece that is on in the settings but not happening shows an
+            // off switch, and this line says why (see note()).
+            description: root.note(modelData)
             foreground: root.foreground
             accent: root.accent
             fontFamily: root.fontFamily
-            // The switch follows what is happening, not what is configured. A
-            // piece that is on but stood down reads as off, which is the truth
-            // on screen -- the line above says why.
             checked: root.on(modelData.key)
             hasCursor: root.cursorActive && root.cursorIndex === index
             onHovered: function(isHovered) {

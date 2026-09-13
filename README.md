@@ -7,11 +7,14 @@ screensaver, lock, and boot splash — plus Repair and Uninstall.
 ![Matrix panel](preview.png)
 
 This widget owns no state of its own. Every question it asks goes to the
-`omarchy-matrix` CLI (`omarchy-matrix status --json`), which is installed by
-the main pack. **Installed alone, without the rest of the pack, the icon
-appears dimmed and the panel has nothing to report** — that is expected, not
-a bug, and is exactly how it behaves today when the pack is stood down for
-another theme.
+`omarchy-matrix` CLI (`omarchy-matrix status --json`), which the main pack
+installs. **If you install the widget without the rest of the pack, the icon
+is dimmed and the panel has nothing to report.** That is expected.
+
+A switch shows what is happening now. If a piece is on in your settings but
+not happening, the switch is off and the line under it says why. For example,
+another theme stands the pack down, and each piece that is on then says
+"On, but stood down with the theme".
 
 ## Install
 
