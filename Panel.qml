@@ -142,7 +142,10 @@ Panel {
   }
 
   function refresh() {
-    if (!status.running) status.running = true
+    if (!status.running) {
+      root.statusRaw = ""
+      status.running = true
+    }
   }
 
   onOpenedChanged: {
@@ -157,29 +160,45 @@ Panel {
   // stood down by a theme change nobody told us about.
   Component.onCompleted: refresh()
 
+  // The status answer, collected raw and parsed once the process is gone: a
+  // clipped stream must never be parsed as if it were whole.
+  property string statusRaw: ""
+
   Process {
     id: status
-    command: [root.cli, "status", "--json"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          root.state = JSON.parse(text || "{}")
-        } catch (e) {
-          root.state = ({})
+    // Never hangs the panel: the CLI answers in milliseconds, and anything
+    // past three seconds is wedged -- killed a second later.
+    command: ["/usr/bin/timeout", "-k", "1", "3", root.cli, "status", "--json"]
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(data) {
+        root.statusRaw += data
+        // 16 KiB is far past any answer this CLI gives; past it the stream is
+        // garbage, so the process stops instead of parsing a fragment.
+        if (root.statusRaw.length > 16384) {
+          root.statusRaw = ""
+          status.running = false
         }
-        root.asked = true
       }
     }
     // Not installed, or half installed: say nothing and dim the icon rather
     // than drawing four switches that would answer nothing.
     onExited: function(exitCode) {
-      if (exitCode !== 0) {
+      if (exitCode === 0 && root.statusRaw !== "") {
+        try {
+          root.state = JSON.parse(root.statusRaw)
+        } catch (e) {
+          root.state = ({})
+        }
+      } else {
         root.state = ({})
-        root.asked = true
       }
+      root.statusRaw = ""
+      root.asked = true
     }
   }
+
+  Component.onDestruction: status.running = false
 
   // One late re-read after a toggle. A piece can take a moment: `lock` waits for
   // the handler to answer steadily, `wallpaper` waits for the background to be
