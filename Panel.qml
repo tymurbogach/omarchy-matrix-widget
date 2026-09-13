@@ -31,9 +31,13 @@ Panel {
   // here would only compete with the rain service's own.
   manageIpc: false
 
-  // The provider owns this file, the way it owns manifest.json -- the machinery
-  // is the CLI, the derivers and the scripts. This is the one name in it.
-  readonly property string cli: "omarchy-matrix"
+  // The one program this panel ever runs, as an absolute path: no PATH lookup,
+  // no shell word-splitting, nothing built from input. The provider owns this
+  // file the way it owns manifest.json -- the machinery is the CLI, and this
+  // is the one name in it.
+  readonly property string cli: Quickshell.env("HOME") + "/.local/bin/omarchy-matrix"
+  // Omarchy's own floating terminal, by absolute path for the same reason.
+  readonly property string launcher: Quickshell.env("OMARCHY_PATH") + "/bin/omarchy-launch-floating-terminal-with-presentation"
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color accent: Color.accent
@@ -98,15 +102,19 @@ Panel {
   }
 
   // --- doing things -----------------------------------------------------------
+  // argv vectors, never a shell string: the args land in positional parameters
+  // without re-tokenizing, so nothing here can become a second command.
 
-  function run(command) {
-    if (bar) bar.run(command)
+  function runHidden(args) {
+    Quickshell.execDetached([root.cli].concat(args))
   }
 
   // In a terminal, not detached: these want a password, print as they go, or
-  // ask a question. The menu rows they replace did the same.
+  // ask a question. The menu rows they replace did the same. One shell string,
+  // single-quoted, as the launcher's only argument -- and these three commands
+  // are the only ones that ever take that path.
   function runVisibly(command) {
-    run("omarchy-launch-floating-terminal-with-presentation '" + command + "'")
+    Quickshell.execDetached([root.launcher, "'" + command + "'"])
   }
 
   function togglePiece(key) {
@@ -116,7 +124,7 @@ Panel {
       root.close()
       return
     }
-    run(cli + " " + key + " toggle")
+    runHidden([key, "toggle"])
     // The lock swap restarts the shell, which takes this widget with it; the
     // others land in a second or so. Ask again shortly either way rather than
     // drawing an optimistic tick that may not come true.
@@ -129,7 +137,7 @@ Panel {
   }
 
   function uninstall() {
-    runVisibly(cli + "-uninstall")
+    runVisibly(cli + " uninstall")
     root.close()
   }
 
