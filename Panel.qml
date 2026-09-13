@@ -312,6 +312,7 @@ Panel {
           iconOpacity: root.inEffect ? 1.0 : 0.5
           iconComponent: Component {
             Text {
+              textFormat: Text.PlainText
               text: "󰘨"
               color: root.foreground
               font.family: root.fontFamily
