@@ -55,18 +55,26 @@ Panel {
   // ASCII capped at 64 -- anything else falls back to switched-off defaults,
   // which is also what a CLI that is not there says.
 
-  property var state: ({ name: "Matrix", slug: "", theme: "", active: false, settings: ({}), pieces: ({}) })
+  property var state: ({ name: "Enter the Matrix", version: "", slug: "", theme: "", active: false, settings: ({}), pieces: ({}) })
   property bool asked: false
 
   function cleanString(value) {
     return String(value || "").replace(/[^\x20-\x7e]/g, "").slice(0, 64)
   }
 
+  // A version is a short run of these characters, or nothing. It lands in the
+  // panel title next to the name, and in the label of the Update button.
+  function cleanVersion(value) {
+    var version = cleanString(value)
+    return /^[0-9A-Za-z.+-]{1,32}$/.test(version) ? version : ""
+  }
+
   function sanitize(raw) {
-    var clean = { name: "Matrix", slug: "", theme: "", active: false, settings: ({}), pieces: ({}) }
+    var clean = { name: "Enter the Matrix", version: "", slug: "", theme: "", active: false, settings: ({}), pieces: ({}) }
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return clean
     if (raw.schema !== 1) return clean
-    clean.name = cleanString(raw.name) || "Matrix"
+    clean.name = cleanString(raw.name) || "Enter the Matrix"
+    clean.version = cleanVersion(raw.version)
     clean.slug = cleanString(raw.slug)
     clean.theme = cleanString(raw.theme)
     clean.active = raw.active === true
@@ -80,7 +88,7 @@ Panel {
     return clean
   }
 
-  readonly property string packName: state.name || "Matrix"
+  readonly property string packName: state.name || "Enter the Matrix"
   readonly property string currentTheme: String(state.theme || "")
   readonly property bool inEffect: state.active === true
 
@@ -126,13 +134,14 @@ Panel {
   }
 
   // --- the cursor -------------------------------------------------------------
-  // Four switches then two actions, in one list: Up/Down walks it, Enter
-  // activates. Mouse hover moves the cursor to whatever it is over, so the
-  // keyboard never lands somewhere the eye is not.
+  // Four switches then two actions, and Update last when a newer version is
+  // out, in one list: Up/Down walks it, Enter activates. Mouse hover moves the
+  // cursor to whatever it is over, so the keyboard never lands somewhere the
+  // eye is not.
 
   property bool cursorActive: false
   property int cursorIndex: 0
-  readonly property int itemCount: rows.length + 2
+  readonly property int itemCount: rows.length + (update.available ? 3 : 2)
 
   function moveCursor(dx, dy) {
     var step = dy !== 0 ? dy : dx
@@ -142,7 +151,8 @@ Panel {
   function activateCursor() {
     if (cursorIndex < rows.length) togglePiece(rows[cursorIndex].key)
     else if (cursorIndex === rows.length) repair()
-    else uninstall()
+    else if (cursorIndex === rows.length + 1) uninstall()
+    else runUpdate()
   }
 
   // --- doing things -----------------------------------------------------------
@@ -189,6 +199,14 @@ Panel {
     root.close()
   }
 
+  // In a terminal: the pull and doctor print as they go, and a pull that stops
+  // on local changes has to say so where somebody reads it.
+  function runUpdate() {
+    if (!root.update.available) return
+    runVisibly(["update"])
+    root.close()
+  }
+
   function refresh() {
     if (!status.running) {
       root.statusRaw = ""
@@ -202,6 +220,7 @@ Panel {
       cursorActive = false
       cursorIndex = 0
       refresh()
+      checkUpdate()
     }
   }
 
@@ -252,7 +271,70 @@ Panel {
     }
   }
 
-  Component.onDestruction: status.running = false
+  // --- updates -----------------------------------------------------------------
+  // Asked each time the panel opens, apart from the status poll: the check can
+  // reach GitHub, and `status` has to stay instant. The CLI keeps the answer
+  // for six hours, so opening the panel again costs nothing. The answer is
+  // handled like the status one: collected whole, capped, then sanitized.
+
+  property var update: ({ available: false, latest: "" })
+  property string updateRaw: ""
+  property bool updateOverflow: false
+
+  function sanitizeUpdate(raw) {
+    var clean = { available: false, latest: "" }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return clean
+    if (raw.schema !== 1 || raw.available !== true) return clean
+    var latest = cleanVersion(raw.latest)
+    if (latest === "") return clean
+    clean.available = true
+    clean.latest = latest
+    return clean
+  }
+
+  function checkUpdate() {
+    if (!root.cliSafe || updateCheck.running) return
+    root.updateRaw = ""
+    root.updateOverflow = false
+    updateCheck.running = true
+  }
+
+  Process {
+    id: updateCheck
+    // A fetch over a slow link takes a while. Past twenty seconds it is
+    // wedged, and the panel simply offers no update.
+    command: ["/usr/bin/timeout", "-k", "1", "20", root.cli, "update", "--check", "--json"]
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(data) {
+        if (root.updateOverflow) return
+        root.updateRaw += data
+        // The answer is one short line. Past 4 KiB it is not that answer.
+        if (root.updateRaw.length > 4096) {
+          root.updateOverflow = true
+          root.updateRaw = ""
+          updateCheck.running = false
+        }
+      }
+    }
+    onExited: function(exitCode) {
+      var answer = null
+      if (exitCode === 0 && !root.updateOverflow && root.updateRaw !== "") {
+        try {
+          answer = JSON.parse(root.updateRaw)
+        } catch (e) {
+          answer = null
+        }
+      }
+      root.update = root.sanitizeUpdate(answer)
+      root.updateRaw = ""
+    }
+  }
+
+  Component.onDestruction: {
+    status.running = false
+    updateCheck.running = false
+  }
 
   // One late re-read after a toggle. A piece can take a moment: `lock` waits for
   // the handler to answer steadily, `wallpaper` waits for the background to be
@@ -324,20 +406,70 @@ Panel {
         width: parent.width
         spacing: Style.space(12)
 
-        PanelHero {
+        // Omarchy's PanelHero, drawn here: it takes the title as one string,
+        // and the version has to sit beside the name, not in it. The icon, the
+        // sizes and the caption underneath are PanelHero's own. The version is
+        // smaller and dim, on the title's baseline, the way OmaSettings shows
+        // its version: in the same size and weight it would read as part of
+        // the name.
+        Item {
           width: parent.width
-          title: root.packName
-          meta: root.summary
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          iconOpacity: root.inEffect ? 1.0 : 0.5
-          iconComponent: Component {
+          implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight)
+
+          Text {
+            id: heroIcon
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            opacity: root.inEffect ? 1.0 : 0.5
+            textFormat: Text.PlainText
+            text: "󰘨"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.display
+          }
+
+          Column {
+            id: heroLabels
+            anchors.left: heroIcon.right
+            anchors.leftMargin: Style.space(14)
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+
+            Row {
+              spacing: Style.space(6)
+
+              Text {
+                id: heroTitle
+                textFormat: Text.PlainText
+                text: root.packName
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+
+              Text {
+                visible: root.state.version !== ""
+                anchors.baseline: heroTitle.baseline
+                textFormat: Text.PlainText
+                text: root.state.version
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+              }
+            }
+
             Text {
+              width: parent.width
               textFormat: Text.PlainText
-              text: "󰘨"
-              color: root.foreground
+              text: root.summary.toUpperCase()
+              color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
-              font.pixelSize: Style.font.display
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 1.2
+              elide: Text.ElideRight
             }
           }
         }
@@ -425,6 +557,23 @@ Panel {
             }
             onClicked: root.uninstall()
           }
+        }
+
+        // Only when a newer version is out, and last in the cursor's list.
+        Button {
+          visible: root.update.available
+          text: "Update to " + root.update.latest
+          iconText: "󰚰"
+          tooltipText: "Pull the latest version of this theme, then re-apply everything"
+          bordered: true
+          foreground: root.foreground
+          accent: root.accent
+          fontFamily: root.fontFamily
+          hasCursor: root.cursorActive && root.cursorIndex === root.rows.length + 2
+          onHovered: function(isHovered) {
+            if (isHovered) { root.cursorActive = true; root.cursorIndex = root.rows.length + 2 }
+          }
+          onClicked: root.runUpdate()
         }
       }
     }

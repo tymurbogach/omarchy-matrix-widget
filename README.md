@@ -2,7 +2,14 @@
 
 The bar widget for the [Matrix pack for Omarchy](https://github.com/tymurbogach/omarchy-enter-the-matrix-theme):
 one icon on your bar, and a panel with four switches — desktop rain,
-screensaver, lock, and boot splash — plus Repair and Uninstall.
+screensaver, lock, and boot splash — plus Repair and Uninstall. The panel's
+title carries the version you run.
+
+When a newer version is out, an **Update to X** button appears under the
+others. It runs `omarchy-matrix update` in a terminal: a fast-forward
+`git pull` of the theme, and nothing else, then `doctor`. To know whether an
+update exists, the panel asks `omarchy-matrix update --check` each time it
+opens. That check reaches GitHub at most once every six hours.
 
 ![Matrix panel](preview.png)
 
